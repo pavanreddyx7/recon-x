@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+venv/
+env/
+.env
+
+# Scan output & logs
+output/
+*.log
+*.db
+*.sarif
+
+# Nikto output files
+nikto_*.json
+
+# Sensitive / personal files
+*.pdf
+*.key
+*.pem
+
+# OS
+.DS_Store
+Thumbs.db
