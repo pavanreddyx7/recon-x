@@ -27,8 +27,11 @@ cd recon-x
 ### 2. Install Python Dependencies
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt --break-system-packages
 ```
+
+> **Note:** On Kali / Debian / Ubuntu, use `--break-system-packages` to install into the system Python used by `sudo`.  
+> This ensures all modules are available when running with `sudo python3`.
 
 ### 3. Install System Tools (Kali / Debian / Ubuntu)
 
