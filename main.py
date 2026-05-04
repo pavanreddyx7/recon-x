@@ -10,6 +10,30 @@ import os
 import signal
 import sys
 import time
+
+# ── Path bootstrap (ensures packages are found under sudo) ───────────────────
+def _bootstrap_path() -> None:
+    _base = os.path.dirname(os.path.abspath(__file__))
+    _candidates = [
+        # venv inside the project directory
+        os.path.join(_base, "venv", "lib",
+                     f"python{sys.version_info.major}.{sys.version_info.minor}",
+                     "site-packages"),
+        # user local packages (~/.local/lib/...)
+        os.path.join(os.path.expanduser("~"), ".local", "lib",
+                     f"python{sys.version_info.major}.{sys.version_info.minor}",
+                     "site-packages"),
+        # original user's local packages when running under sudo
+        os.path.join(os.path.expanduser(f"~{os.environ.get('SUDO_USER', '')}"),
+                     ".local", "lib",
+                     f"python{sys.version_info.major}.{sys.version_info.minor}",
+                     "site-packages"),
+    ]
+    for path in _candidates:
+        if os.path.isdir(path) and path not in sys.path:
+            sys.path.insert(0, path)
+
+_bootstrap_path()
 from contextlib import contextmanager
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
