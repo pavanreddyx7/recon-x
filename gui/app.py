@@ -30,8 +30,8 @@ def _bootstrap():
 _bootstrap()
 
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtGui import QIcon, QFont
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QTimer
+from PyQt6.QtGui import QFont
 
 from config import cfg
 from gui.main_window import MainWindow
@@ -43,9 +43,6 @@ def main():
     app.setApplicationName("R3CON-X")
     app.setApplicationVersion("2.0.0")
     app.setOrganizationName("R3CON-X Security")
-
-    # High-DPI support
-    app.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps, True)
 
     # Default font
     font = QFont("Segoe UI", 13)
@@ -61,6 +58,7 @@ def main():
 
     window = MainWindow(output_dir)
     window.show()
+    QTimer.singleShot(0, window.showMaximized)
     sys.exit(app.exec())
 
 

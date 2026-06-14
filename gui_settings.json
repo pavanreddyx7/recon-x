@@ -1,0 +1,8 @@
+{
+  "nvd_api_key": "",
+  "output_dir": "",
+  "default_profile": "standard",
+  "port_range": "1-1024",
+  "threads": 150,
+  "timeout": 10
+}

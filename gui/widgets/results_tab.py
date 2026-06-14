@@ -1,14 +1,19 @@
+import json
+import csv
+import os
+import subprocess
+import platform
+from datetime import datetime
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QTabWidget, QTableWidget, QTableWidgetItem,
     QHeaderView, QSplitter, QTextEdit, QFrame,
-    QLineEdit, QComboBox, QGroupBox, QScrollArea,
-    QGridLayout, QSizePolicy
+    QLineEdit, QComboBox, QGroupBox, QSizePolicy,
+    QPushButton, QFileDialog, QMessageBox, QApplication
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QColor
 from gui.theme import SEV_COLORS
-from gui.widgets.severity_badge import SeverityBadge
 from gui.widgets.gauge_widget import GaugeWidget
 
 
@@ -37,70 +42,90 @@ class _OverviewTab(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(16, 16, 16, 16)
-        lay.setSpacing(16)
+        lay.setContentsMargins(20, 20, 20, 20)
+        lay.setSpacing(18)
 
         # Summary cards
         cards = QHBoxLayout()
         cards.setSpacing(12)
         self._cards: dict[str, QLabel] = {}
 
-        for key, title, color in [
-            ("target",    "TARGET",       "#00d4ff"),
-            ("ip",        "IP ADDRESS",   "#00ff88"),
-            ("ports",     "OPEN PORTS",   "#00ff88"),
-            ("vulns",     "VULNERABILITIES", "#ff8800"),
-            ("risk",      "RISK LEVEL",   "#ff4444"),
-            ("score",     "RISK SCORE",   "#ffcc00"),
+        for key, icon, title, color in [
+            ("target", "⌖", "TARGET",          "#00b8d4"),
+            ("ip",     "◎", "IP ADDRESS",       "#3b9eff"),
+            ("ports",  "⊛", "OPEN PORTS",       "#00ff88"),
+            ("vulns",  "⚠", "VULNERABILITIES",  "#ff7b2d"),
+            ("risk",   "▲", "RISK LEVEL",       "#ff4757"),
+            ("score",  "◈", "RISK SCORE",       "#f59e0b"),
         ]:
             frame = QFrame()
             frame.setObjectName("Card")
             fl = QVBoxLayout(frame)
+            fl.setContentsMargins(16, 14, 16, 14)
             fl.setSpacing(4)
+            top_row = QHBoxLayout()
+            ic = QLabel(icon)
+            ic.setStyleSheet(f"color: {color}; font-size: 16px; background: transparent;")
+            top_row.addWidget(ic)
             tl = QLabel(title)
             tl.setObjectName("CardTitle")
-            fl.addWidget(tl)
+            top_row.addWidget(tl)
+            top_row.addStretch()
+            fl.addLayout(top_row)
             vl = QLabel("—")
-            vl.setStyleSheet(f"color: {color}; font-size: 20px; font-weight: bold;")
+            vl.setStyleSheet(
+                f"color: {color}; font-size: 22px; font-weight: 700;"
+                " letter-spacing: -0.5px;")
             fl.addWidget(vl)
             self._cards[key] = vl
             frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             cards.addWidget(frame)
         lay.addLayout(cards)
 
-        # Gauges row
-        gauges_row = QHBoxLayout()
-        gauges_row.setSpacing(20)
+        # Gauges + severity row
+        middle = QHBoxLayout()
+        middle.setSpacing(20)
 
-        self._risk_gauge   = GaugeWidget(15, "Risk Score",    "",  self)
+        # Gauges
+        gauges_col = QVBoxLayout()
+        gauges_row = QHBoxLayout()
+        gauges_row.setSpacing(16)
+        self._risk_gauge   = GaugeWidget(15,  "Risk Score",   "",     self)
         self._header_gauge = GaugeWidget(100, "Header Score", "/100", self)
         for g in (self._risk_gauge, self._header_gauge):
-            g.setFixedSize(150, 150)
+            g.setFixedSize(145, 145)
             gauges_row.addWidget(g)
-        gauges_row.addStretch()
-        lay.addLayout(gauges_row)
+        gauges_col.addLayout(gauges_row)
+        gauges_col.addStretch()
+        middle.addLayout(gauges_col)
 
         # Severity breakdown
-        sev_box = QGroupBox("Vulnerability Severity Breakdown")
+        sev_box = QGroupBox("VULNERABILITY BREAKDOWN")
         sev_lay = QHBoxLayout(sev_box)
+        sev_lay.setSpacing(10)
         self._sev_labels: dict[str, QLabel] = {}
         for sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "NONE"):
-            col = SEV_COLORS.get(sev, "#606070")
+            col = SEV_COLORS.get(sev, "#4b5e7a")
             vbox = QVBoxLayout()
+            vbox.setSpacing(6)
             count_lbl = QLabel("0")
             count_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             count_lbl.setStyleSheet(
-                f"color: {col}; font-size: 22px; font-weight: bold;"
-                f" background-color: {col}18; border: 1px solid {col}44;"
-                f" border-radius: 6px; padding: 8px 16px;")
+                f"color: {col}; font-size: 26px; font-weight: 700;"
+                f" background-color: {col}14; border: 1px solid {col}44;"
+                f" border-radius: 8px; padding: 10px 18px;"
+                f" letter-spacing: -0.5px;")
             vbox.addWidget(count_lbl)
             name_lbl = QLabel(sev)
             name_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            name_lbl.setStyleSheet(f"color: {col}; font-size: 10px;")
+            name_lbl.setStyleSheet(
+                f"color: {col}; font-size: 10px; font-weight: 700;"
+                f" letter-spacing: 0.8px;")
             vbox.addWidget(name_lbl)
             self._sev_labels[sev] = count_lbl
             sev_lay.addLayout(vbox)
-        lay.addWidget(sev_box)
+        middle.addWidget(sev_box, stretch=1)
+        lay.addLayout(middle)
         lay.addStretch()
 
     def load(self, data: dict):
@@ -616,9 +641,71 @@ class ResultsTab(QWidget):
     def _build_ui(self):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
 
+        # ── Header bar ─────────────────────────────────────────────────────
+        header = QWidget()
+        header.setStyleSheet(
+            "background-color: #080e1c; border-bottom: 1px solid #1a2e45;")
+        header.setFixedHeight(70)
+        hb = QHBoxLayout(header)
+        hb.setContentsMargins(24, 12, 24, 12)
+        hb.setSpacing(12)
+
+        title_col = QVBoxLayout()
+        title_col.setSpacing(2)
+        t = QLabel("Scan Results")
+        t.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
+        t.setStyleSheet("color: #cbd5e1; background: transparent;")
+        title_col.addWidget(t)
+        self._target_lbl = QLabel("No scan loaded")
+        self._target_lbl.setStyleSheet(
+            "color: #3d5470; font-size: 12px; background: transparent;")
+        title_col.addWidget(self._target_lbl)
+        hb.addLayout(title_col)
+        hb.addStretch()
+
+        # Export buttons
+        export_lbl = QLabel("Export:")
+        export_lbl.setStyleSheet("color: #3d5470; font-size: 12px; background: transparent;")
+        hb.addWidget(export_lbl)
+
+        for fmt, icon, tip in [
+            ("JSON", "{ }", "Full scan data as JSON"),
+            ("HTML", "</>", "Styled HTML report"),
+            ("CSV",  "⊞",  "Vulnerabilities as CSV"),
+            ("MD",   "✎",  "Markdown summary"),
+        ]:
+            btn = QPushButton(f"{icon}  {fmt}")
+            btn.setFixedHeight(36)
+            btn.setFixedWidth(80)
+            btn.setToolTip(tip)
+            btn.setStyleSheet(
+                "QPushButton { background-color: #0f1929; color: #8fadc8;"
+                " border: 1px solid #1a2e45; border-radius: 7px;"
+                " font-size: 12px; font-weight: 600; }"
+                "QPushButton:hover { background-color: #142035;"
+                " color: #cbd5e1; border-color: #2a3f5f; }"
+                "QPushButton:pressed { background-color: #0a1525; }")
+            btn.clicked.connect(lambda _, f=fmt: self._export(f))
+            hb.addWidget(btn)
+
+        open_folder_btn = QPushButton("⊟  Open Folder")
+        open_folder_btn.setFixedHeight(36)
+        open_folder_btn.setFixedWidth(120)
+        open_folder_btn.setStyleSheet(
+            "QPushButton { background-color: #0f1929; color: #8fadc8;"
+            " border: 1px solid #1a2e45; border-radius: 7px; font-size: 12px; }"
+            "QPushButton:hover { background-color: #142035; color: #cbd5e1;"
+            " border-color: #2a3f5f; }")
+        open_folder_btn.clicked.connect(self._open_output_folder)
+        hb.addWidget(open_folder_btn)
+
+        lay.addWidget(header)
+
+        # ── Tabs ───────────────────────────────────────────────────────────
         self._tabs = QTabWidget()
-        lay.addWidget(self._tabs)
+        lay.addWidget(self._tabs, stretch=1)
 
         self._overview = _OverviewTab()
         self._passive  = _PassiveTab()
@@ -627,15 +714,20 @@ class ResultsTab(QWidget):
         self._cve      = _CVETab()
         self._risk     = _RiskTab()
 
-        self._tabs.addTab(self._overview, "Overview")
-        self._tabs.addTab(self._passive,  "Passive Recon")
-        self._tabs.addTab(self._active,   "Active Scan")
-        self._tabs.addTab(self._web,      "Web Enum")
-        self._tabs.addTab(self._cve,      "CVE Findings")
-        self._tabs.addTab(self._risk,     "Risk Analysis")
+        self._tabs.addTab(self._overview, "⊙  Overview")
+        self._tabs.addTab(self._passive,  "⌖  Passive Recon")
+        self._tabs.addTab(self._active,   "⊛  Active Scan")
+        self._tabs.addTab(self._web,      "</>  Web Enum")
+        self._tabs.addTab(self._cve,      "⚠  CVE Findings")
+        self._tabs.addTab(self._risk,     "▲  Risk Analysis")
 
     def load(self, data: dict):
         self._data = data
+        meta   = data.get("meta", {})
+        target = meta.get("target", "Unknown")
+        ts     = meta.get("timestamp", "")
+        self._target_lbl.setText(
+            f"{target}   ·   {ts}" if ts else target)
         self._overview.load(data)
         self._passive.load(data)
         self._active.load(data)
@@ -643,3 +735,281 @@ class ResultsTab(QWidget):
         self._cve.load(data)
         self._risk.load(data)
         self._tabs.setCurrentIndex(0)
+
+    # ── Export ─────────────────────────────────────────────────────────────
+    def _export(self, fmt: str):
+        if not self._data:
+            QMessageBox.information(self, "No Data", "Run a scan first.")
+            return
+
+        meta   = self._data.get("meta", {})
+        target = meta.get("target", "scan").replace("/", "-").replace(":", "-")
+        ts     = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base   = f"r3conx_{target}_{ts}"
+
+        filters = {
+            "JSON": ("JSON Report (*.json)", f"{base}.json"),
+            "HTML": ("HTML Report (*.html)", f"{base}.html"),
+            "CSV":  ("CSV Spreadsheet (*.csv)", f"{base}_vulns.csv"),
+            "MD":   ("Markdown Report (*.md)", f"{base}.md"),
+        }
+        filt, default = filters[fmt]
+        path, _ = QFileDialog.getSaveFileName(self, f"Export {fmt}", default, filt)
+        if not path:
+            return
+
+        try:
+            if fmt == "JSON":
+                self._write_json(path)
+            elif fmt == "HTML":
+                self._write_html(path)
+            elif fmt == "CSV":
+                self._write_csv(path)
+            elif fmt == "MD":
+                self._write_md(path)
+
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Export Complete")
+            msg.setText(f"Saved to:\n{path}")
+            msg.setStandardButtons(
+                QMessageBox.StandardButton.Ok |
+                QMessageBox.StandardButton.Open)
+            msg.button(QMessageBox.StandardButton.Open).setText("Open File")
+            if msg.exec() == QMessageBox.StandardButton.Open:
+                _open_file(path)
+        except Exception as exc:
+            QMessageBox.critical(self, "Export Error", str(exc))
+
+    def _write_json(self, path: str):
+        with open(path, "w") as f:
+            json.dump(self._data, f, indent=2, default=str)
+
+    def _write_csv(self, path: str):
+        vulns = self._data.get("vulnerabilities", [])
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            w.writerow(["CVE ID", "CVSS Score", "Severity", "Product",
+                        "Version", "Port(s)", "Has Exploit",
+                        "Attack Vector", "Description"])
+            for v in vulns:
+                ports = v.get("matched_ports", [v.get("matched_port", "")])
+                w.writerow([
+                    v.get("cve_id", ""),
+                    v.get("score", ""),
+                    v.get("severity", ""),
+                    v.get("matched_product", ""),
+                    v.get("matched_version", ""),
+                    ", ".join(str(p) for p in ports if p),
+                    "YES" if v.get("has_exploit") else "No",
+                    v.get("cvss", {}).get("attack_vector", ""),
+                    v.get("description", ""),
+                ])
+
+    def _write_md(self, path: str):
+        d    = self._data
+        meta = d.get("meta", {})
+        act  = d.get("active_scan", {})
+        risk = d.get("risk_summary", {})
+        vulns = d.get("vulnerabilities", [])
+
+        lines = [
+            f"# R3CON-X Scan Report",
+            f"",
+            f"| Field | Value |",
+            f"|-------|-------|",
+            f"| Target | `{meta.get('target', '—')}` |",
+            f"| IP | `{meta.get('ip', '—')}` |",
+            f"| Scan Date | {meta.get('timestamp', '—')} |",
+            f"| Profile | {meta.get('profile', '—')} |",
+            f"| Overall Risk | **{risk.get('overall_risk', '—')}** |",
+            f"| Risk Score | {risk.get('risk_score', 0):.2f} |",
+            f"| Open Ports | {act.get('total_open', 0)} |",
+            f"| Vulnerabilities | {len(vulns)} |",
+            f"",
+            f"## Open Ports",
+            f"",
+            f"| Port | Protocol | Service | Product | Version |",
+            f"|------|----------|---------|---------|---------|",
+        ]
+        for p in act.get("open_ports", []):
+            lines.append(
+                f"| {p.get('port','')} | {p.get('protocol','')} |"
+                f" {p.get('service','')} | {p.get('product','')} |"
+                f" {p.get('version','')} |")
+
+        lines += ["", "## Vulnerability Findings", "",
+                  "| CVE ID | Score | Severity | Product | Exploit | Description |",
+                  "|--------|-------|----------|---------|---------|-------------|"]
+        for v in sorted(vulns, key=lambda x: float(x.get("score", 0)), reverse=True):
+            desc = v.get("description", "")[:120].replace("|", "¦")
+            lines.append(
+                f"| {v.get('cve_id','')} | {v.get('score','')} |"
+                f" {v.get('severity','')} | {v.get('matched_product','')[:20]} |"
+                f" {'YES' if v.get('has_exploit') else 'No'} | {desc} |")
+
+        lines += ["", "## Remediation Plan", "",
+                  "| Priority | CVE | Effort | Days | Action |",
+                  "|----------|-----|--------|------|--------|"]
+        for t in risk.get("remediation_plan", []):
+            act_txt = t.get("action", "")[:100].replace("|", "¦")
+            lines.append(
+                f"| {t.get('priority','')} | {t.get('cve_id','')} |"
+                f" {t.get('effort','')} | {t.get('effort_days','')} | {act_txt} |")
+
+        lines += ["", f"---", f"*Generated by R3CON-X · {datetime.now():%Y-%m-%d %H:%M}*"]
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+
+    def _write_html(self, path: str):
+        d     = self._data
+        meta  = d.get("meta", {})
+        act   = d.get("active_scan", {})
+        risk  = d.get("risk_summary", {})
+        vulns = d.get("vulnerabilities", [])
+        web   = d.get("web_enum", {})
+
+        overall = risk.get("overall_risk", "NONE")
+        risk_color = {
+            "CRITICAL": "#ff4757", "HIGH": "#ff7b2d",
+            "MEDIUM": "#f59e0b", "LOW": "#3b9eff",
+        }.get(overall, "#4b5e7a")
+
+        def sev_badge(sev: str) -> str:
+            c = SEV_COLORS.get(sev.upper(), "#4b5e7a")
+            return (f'<span style="color:{c};background:{c}18;border:1px solid {c}44;'
+                    f'border-radius:4px;padding:2px 8px;font-size:11px;'
+                    f'font-weight:700">{sev}</span>')
+
+        ports_rows = "".join(
+            f"<tr><td style='color:#3b9eff'>{p.get('port','')}</td>"
+            f"<td>{p.get('protocol','')}</td><td style='color:#00ff88'>{p.get('state','')}</td>"
+            f"<td>{p.get('service','')}</td><td>{p.get('product','')}</td>"
+            f"<td>{p.get('version','')}</td></tr>"
+            for p in act.get("open_ports", [])
+        )
+
+        vuln_rows_parts = []
+        for v in sorted(vulns, key=lambda x: float(x.get("score", 0)), reverse=True):
+            sev      = str(v.get("severity", "")).upper()
+            sev_col  = SEV_COLORS.get(sev, "#cbd5e1")
+            exp_col  = "#ff4757" if v.get("has_exploit") else "#3d5470"
+            exp_txt  = "YES" if v.get("has_exploit") else "No"
+            desc     = v.get("description", "")[:120]
+            prod     = v.get("matched_product", "")[:24]
+            vuln_rows_parts.append(
+                f"<tr><td style='color:#00b8d4'>{v.get('cve_id','')}</td>"
+                f"<td style='color:{sev_col}'>{v.get('score','')}</td>"
+                f"<td>{sev_badge(sev)}</td>"
+                f"<td>{prod}</td>"
+                f"<td style='color:{exp_col}'>{exp_txt}</td>"
+                f"<td style='color:#7a95b0;font-size:12px'>{desc}</td></tr>"
+            )
+        vuln_rows = "".join(vuln_rows_parts)
+
+        _eff_colors = ["#ff4757", "#ff7b2d", "#f59e0b", "#3b9eff"]
+        rem_rows_parts = []
+        for t in risk.get("remediation_plan", []):
+            pri      = t.get("priority", 4)
+            eff_col  = _eff_colors[min(int(pri) - 1, 3)] if pri else "#4b5e7a"
+            action   = t.get("action", "")[:100]
+            rem_rows_parts.append(
+                f"<tr><td>{pri}</td>"
+                f"<td style='color:#00b8d4'>{t.get('cve_id','')}</td>"
+                f"<td style='color:{eff_col}'>{t.get('effort','')}</td>"
+                f"<td>{t.get('effort_days','')}</td>"
+                f"<td style='font-size:12px'>{action}</td></tr>"
+            )
+        rem_rows = "".join(rem_rows_parts)
+
+        html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>R3CON-X Report — {meta.get('target','')}</title>
+<style>
+  *{{box-sizing:border-box;margin:0;padding:0}}
+  body{{background:#0b0f1a;color:#cbd5e1;font-family:'Segoe UI',sans-serif;font-size:14px;padding:32px}}
+  h1{{color:#00ff88;font-size:28px;margin-bottom:4px}}
+  h2{{color:#00b8d4;font-size:18px;margin:32px 0 12px;padding-bottom:8px;border-bottom:1px solid #1a2e45}}
+  .meta-grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:20px 0}}
+  .card{{background:#0f1929;border:1px solid #1a2e45;border-radius:10px;padding:16px}}
+  .card-label{{color:#3d5470;font-size:10px;font-weight:700;letter-spacing:1px;margin-bottom:6px}}
+  .card-value{{font-size:22px;font-weight:700}}
+  .risk-banner{{background:{risk_color}14;border:1px solid {risk_color}44;border-radius:10px;
+    padding:20px;text-align:center;color:{risk_color};font-size:24px;font-weight:700;margin:20px 0}}
+  table{{width:100%;border-collapse:collapse;margin-top:8px}}
+  th{{background:#08111f;color:#3d5470;font-size:11px;font-weight:700;letter-spacing:0.8px;
+    text-align:left;padding:10px 12px;border-bottom:1px solid #1a2e45}}
+  td{{padding:9px 12px;border-bottom:1px solid #142035;vertical-align:top}}
+  tr:hover td{{background:#0f1929}}
+  .footer{{margin-top:40px;color:#243550;font-size:11px;border-top:1px solid #1a2e45;padding-top:16px}}
+</style>
+</head>
+<body>
+<h1>R3CON-X Scan Report</h1>
+<p style="color:#3d5470;margin-bottom:20px">Generated {datetime.now():%Y-%m-%d %H:%M:%S}</p>
+
+<div class="risk-banner">Overall Risk: {overall} &nbsp;·&nbsp; Score: {risk.get('risk_score',0):.2f}</div>
+
+<div class="meta-grid">
+  <div class="card"><div class="card-label">TARGET</div>
+    <div class="card-value" style="color:#00b8d4;font-size:16px">{meta.get('target','—')}</div></div>
+  <div class="card"><div class="card-label">IP ADDRESS</div>
+    <div class="card-value" style="color:#3b9eff">{meta.get('ip','—')}</div></div>
+  <div class="card"><div class="card-label">OPEN PORTS</div>
+    <div class="card-value" style="color:#00ff88">{act.get('total_open',0)}</div></div>
+  <div class="card"><div class="card-label">VULNERABILITIES</div>
+    <div class="card-value" style="color:#ff7b2d">{len(vulns)}</div></div>
+  <div class="card"><div class="card-label">SCAN PROFILE</div>
+    <div class="card-value" style="color:#a78bfa;font-size:16px">{meta.get('profile','—')}</div></div>
+  <div class="card"><div class="card-label">HEADER SCORE</div>
+    <div class="card-value" style="color:#f59e0b">{web.get('header_score',0)}/100</div></div>
+</div>
+
+<h2>Open Ports</h2>
+<table>
+  <tr><th>Port</th><th>Protocol</th><th>State</th><th>Service</th><th>Product</th><th>Version</th></tr>
+  {ports_rows if ports_rows else '<tr><td colspan="6" style="color:#3d5470">No open ports found</td></tr>'}
+</table>
+
+<h2>Vulnerability Findings ({len(vulns)})</h2>
+<table>
+  <tr><th>CVE ID</th><th>Score</th><th>Severity</th><th>Product</th><th>Exploit</th><th>Description</th></tr>
+  {vuln_rows if vuln_rows else '<tr><td colspan="6" style="color:#3d5470">No vulnerabilities found</td></tr>'}
+</table>
+
+<h2>Remediation Plan</h2>
+<table>
+  <tr><th>#</th><th>CVE</th><th>Effort</th><th>Days</th><th>Action</th></tr>
+  {rem_rows if rem_rows else '<tr><td colspan="5" style="color:#3d5470">No remediation items</td></tr>'}
+</table>
+
+<div class="footer">R3CON-X · Reconnaissance &amp; Vulnerability Intelligence · {datetime.now():%Y-%m-%d}</div>
+</body>
+</html>"""
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(html)
+
+    def _open_output_folder(self):
+        path = self._data.get("meta", {}).get("output_dir", "")
+        if not path or not os.path.isdir(path):
+            # Try to find any output file
+            for key in ("json_path", "html_path", "pdf_path"):
+                fpath = self._data.get("meta", {}).get(key, "")
+                if fpath and os.path.exists(fpath):
+                    path = os.path.dirname(fpath)
+                    break
+        if path and os.path.isdir(path):
+            _open_file(path)
+        else:
+            QMessageBox.information(self, "Folder Not Found",
+                                    "Could not locate the output folder for this scan.")
+
+
+def _open_file(path: str):
+    if platform.system() == "Windows":
+        os.startfile(path)
+    elif platform.system() == "Darwin":
+        subprocess.Popen(["open", path])
+    else:
+        subprocess.Popen(["xdg-open", path])

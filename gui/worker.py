@@ -16,6 +16,9 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
+# Import main in the main thread (signal.signal() fails in worker threads)
+import main as _main_module
+
 _STRIP_RICH = re.compile(r'\[/?[a-zA-Z0-9_.# ]+\]')
 
 
@@ -146,7 +149,7 @@ class ScanWorker(QThread):
     # ── Main run ─────────────────────────────────────────────────────────────
     def run(self):
         try:
-            import main as _main
+            _main = _main_module
 
             orig_log, log_mod = self._patch_logger()
             interceptor       = log_mod.log

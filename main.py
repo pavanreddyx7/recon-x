@@ -64,8 +64,10 @@ def _handle_signal(_signum: int, _frame: Any) -> None:
     _shutdown = True
     _console.print("\n[bold yellow][!] Interrupt received — finishing current stage then stopping.[/bold yellow]")
 
-signal.signal(signal.SIGINT,  _handle_signal)
-signal.signal(signal.SIGTERM, _handle_signal)
+import threading as _threading
+if _threading.current_thread() is _threading.main_thread():
+    signal.signal(signal.SIGINT,  _handle_signal)
+    signal.signal(signal.SIGTERM, _handle_signal)
 
 
 # ── Scan result store ─────────────────────────────────────────────────────────

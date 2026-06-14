@@ -1,7 +1,6 @@
-import math
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtCore import Qt, QRectF
-from PyQt6.QtGui import QPainter, QColor, QPen, QFont, QConicalGradient
+from PyQt6.QtGui import QPainter, QColor, QPen, QFont
 
 
 class GaugeWidget(QWidget):
@@ -10,10 +9,10 @@ class GaugeWidget(QWidget):
     def __init__(self, max_val: float = 100, label: str = "",
                  unit: str = "", parent=None):
         super().__init__(parent)
-        self._value   = 0.0
-        self._max     = max_val
-        self._label   = label
-        self._unit    = unit
+        self._value = 0.0
+        self._max   = max_val
+        self._label = label
+        self._unit  = unit
         self.setMinimumSize(140, 140)
 
     def setValue(self, v: float) -> None:
@@ -24,50 +23,51 @@ class GaugeWidget(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        w, h   = self.width(), self.height()
-        size   = min(w, h) - 20
-        x      = (w - size) / 2
-        y      = (h - size) / 2
-        rect   = QRectF(x, y, size, size)
-        ratio  = self._value / self._max if self._max else 0
+        w, h  = self.width(), self.height()
+        size  = min(w, h) - 16
+        x     = (w - size) / 2
+        y     = (h - size) / 2
+        rect  = QRectF(x, y, size, size)
+        ratio = self._value / self._max if self._max else 0
 
-        # Color based on ratio
+        # Arc color by severity
         if ratio >= 0.8:
-            arc_color = QColor("#ff4444")
+            arc_color = QColor("#ff4757")
         elif ratio >= 0.6:
-            arc_color = QColor("#ff8800")
+            arc_color = QColor("#ff7b2d")
         elif ratio >= 0.4:
-            arc_color = QColor("#ffcc00")
+            arc_color = QColor("#f59e0b")
         else:
             arc_color = QColor("#00ff88")
 
-        # Background arc
-        bg_pen = QPen(QColor("#1a1a2e"), 10, Qt.PenStyle.SolidLine,
+        pen_w = max(8, int(size * 0.08))
+
+        # Background track
+        bg_pen = QPen(QColor("#1a2e45"), pen_w, Qt.PenStyle.SolidLine,
                       Qt.PenCapStyle.RoundCap)
         p.setPen(bg_pen)
         p.drawArc(rect, 225 * 16, -270 * 16)
 
         # Value arc
         if ratio > 0:
-            fg_pen = QPen(arc_color, 10, Qt.PenStyle.SolidLine,
+            fg_pen = QPen(arc_color, pen_w, Qt.PenStyle.SolidLine,
                           Qt.PenCapStyle.RoundCap)
             p.setPen(fg_pen)
-            span = int(-270 * 16 * ratio)
-            p.drawArc(rect, 225 * 16, span)
+            p.drawArc(rect, 225 * 16, int(-270 * 16 * ratio))
 
-        # Center value text
+        # Center value
         p.setPen(QPen(arc_color))
-        vfont = QFont("Consolas", int(size * 0.18), QFont.Weight.Bold)
+        vfont = QFont("JetBrains Mono", max(9, int(size * 0.17)), QFont.Weight.Bold)
         p.setFont(vfont)
         p.drawText(rect, Qt.AlignmentFlag.AlignCenter,
                    f"{self._value:.0f}{self._unit}")
 
-        # Label below center
+        # Label
         if self._label:
-            p.setPen(QPen(QColor("#808090")))
-            lfont = QFont("Segoe UI", int(size * 0.09))
+            p.setPen(QPen(QColor("#3d5470")))
+            lfont = QFont("Segoe UI", max(7, int(size * 0.09)))
             p.setFont(lfont)
-            label_rect = QRectF(x, y + size * 0.58, size, size * 0.2)
+            label_rect = QRectF(x, y + size * 0.60, size, size * 0.2)
             p.drawText(label_rect, Qt.AlignmentFlag.AlignCenter, self._label)
 
         p.end()

@@ -1,81 +1,111 @@
-import os
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QComboBox, QCheckBox, QPushButton,
     QProgressBar, QFileDialog, QGroupBox, QGridLayout,
-    QSizePolicy, QFrame, QSplitter
+    QFrame, QScrollArea, QSizePolicy
 )
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QColor
+from PyQt6.QtGui import QFont
 from gui.widgets.log_console import LogConsole
 from gui.worker import ScanWorker, STAGE_NAMES
 
+_STAGE_ICONS  = ["①", "②", "③", "④", "⑤", "⑥", "⑦"]
+_STAGE_COLORS = {
+    "waiting": ("#1a2e45", "#3d5470"),
+    "running": ("#f59e0b", "#f59e0b"),
+    "done":    ("#00ff88", "#00c96e"),
+    "failed":  ("#ff4757", "#ff4757"),
+}
+
 
 class _StageRow(QWidget):
-    def __init__(self, name: str, parent=None):
+    def __init__(self, name: str, idx: int, parent=None):
         super().__init__(parent)
         self._name = name
+        self._idx  = idx
+        self.setMinimumHeight(36)
+
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(0, 2, 0, 2)
-        lay.setSpacing(8)
+        lay.setContentsMargins(8, 4, 8, 4)
+        lay.setSpacing(12)
 
-        self._status = QLabel("⏸")
-        self._status.setFixedWidth(20)
-        self._status.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lay.addWidget(self._status)
+        # Numbered badge
+        self._badge = QLabel(_STAGE_ICONS[idx])
+        self._badge.setFixedSize(26, 26)
+        self._badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._badge.setStyleSheet(
+            "color: #1a2e45; font-size: 16px; background: transparent;")
+        lay.addWidget(self._badge)
 
-        short = name.split('·')[-1].strip()
-        lbl = QLabel(short)
-        lbl.setFixedWidth(180)
-        lbl.setStyleSheet("color: #808090; font-size: 12px;")
-        self._lbl = lbl
-        lay.addWidget(lbl)
+        # Stage name
+        short = name.split("·")[-1].strip()
+        self._lbl = QLabel(short)
+        self._lbl.setMinimumWidth(170)
+        self._lbl.setStyleSheet("color: #3d5470; font-size: 13px;")
+        lay.addWidget(self._lbl)
 
+        # Progress bar
         self._bar = QProgressBar()
         self._bar.setRange(0, 100)
         self._bar.setValue(0)
         self._bar.setTextVisible(False)
-        self._bar.setFixedHeight(10)
+        self._bar.setFixedHeight(6)
+        self._bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         lay.addWidget(self._bar, stretch=1)
 
+        # Time label
         self._time = QLabel("")
-        self._time.setFixedWidth(60)
-        self._time.setStyleSheet("color: #606070; font-size: 11px;")
+        self._time.setFixedWidth(56)
         self._time.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._time.setStyleSheet("color: #243550; font-size: 11px; font-family: monospace;")
         lay.addWidget(self._time)
 
+        # Status icon
+        self._status = QLabel("–")
+        self._status.setFixedWidth(20)
+        self._status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._status.setStyleSheet("color: #1a2e45; font-size: 14px;")
+        lay.addWidget(self._status)
+
     def set_waiting(self):
-        self._status.setText("⏸")
-        self._status.setStyleSheet("color: #404050;")
-        self._lbl.setStyleSheet("color: #606070; font-size: 12px;")
+        self._badge.setStyleSheet("color: #1a2e45; font-size: 16px; background: transparent;")
+        self._lbl.setStyleSheet("color: #3d5470; font-size: 13px; font-weight: 400;")
         self._bar.setValue(0)
         self._bar.setStyleSheet("")
         self._time.setText("")
+        self._status.setText("–")
+        self._status.setStyleSheet("color: #1a2e45; font-size: 14px;")
 
     def set_running(self):
-        self._status.setText("⟳")
-        self._status.setStyleSheet("color: #ffcc00;")
-        self._lbl.setStyleSheet("color: #ffcc00; font-size: 12px; font-weight: bold;")
+        self._badge.setStyleSheet("color: #f59e0b; font-size: 16px; background: transparent;")
+        self._lbl.setStyleSheet("color: #f59e0b; font-size: 13px; font-weight: 600;")
         self._bar.setValue(50)
         self._bar.setStyleSheet(
-            "QProgressBar::chunk { background-color: #ffcc00; }")
+            "QProgressBar::chunk { background: qlineargradient("
+            "x1:0,y1:0,x2:1,y2:0,stop:0 #f59e0b,stop:1 #ff7b2d); }")
+        self._status.setText("⟳")
+        self._status.setStyleSheet("color: #f59e0b; font-size: 14px;")
 
     def set_done(self, elapsed: float = 0.0):
-        self._status.setText("✔")
-        self._status.setStyleSheet("color: #00ff88;")
-        self._lbl.setStyleSheet("color: #00ff88; font-size: 12px;")
+        self._badge.setStyleSheet("color: #00ff88; font-size: 16px; background: transparent;")
+        self._lbl.setStyleSheet("color: #00c96e; font-size: 13px; font-weight: 500;")
         self._bar.setValue(100)
         self._bar.setStyleSheet(
-            "QProgressBar::chunk { background-color: #00ff88; }")
+            "QProgressBar::chunk { background: qlineargradient("
+            "x1:0,y1:0,x2:1,y2:0,stop:0 #00ff88,stop:1 #00b8d4); }")
         self._time.setText(f"{elapsed:.1f}s")
+        self._time.setStyleSheet("color: #00c96e; font-size: 11px; font-family: monospace;")
+        self._status.setText("✔")
+        self._status.setStyleSheet("color: #00ff88; font-size: 14px;")
 
     def set_failed(self):
-        self._status.setText("✗")
-        self._status.setStyleSheet("color: #ff4444;")
-        self._lbl.setStyleSheet("color: #ff4444; font-size: 12px;")
+        self._badge.setStyleSheet("color: #ff4757; font-size: 16px; background: transparent;")
+        self._lbl.setStyleSheet("color: #ff4757; font-size: 13px; font-weight: 500;")
         self._bar.setValue(100)
         self._bar.setStyleSheet(
-            "QProgressBar::chunk { background-color: #ff4444; }")
+            "QProgressBar::chunk { background-color: #ff4757; }")
+        self._status.setText("✗")
+        self._status.setStyleSheet("color: #ff4757; font-size: 14px;")
 
 
 class ScanTab(QWidget):
@@ -88,143 +118,208 @@ class ScanTab(QWidget):
         self._build_ui()
 
     def _build_ui(self):
-        root = QVBoxLayout(self)
-        root.setContentsMargins(20, 20, 20, 20)
-        root.setSpacing(14)
+        # Outer layout: page header + two-column body
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
 
-        title = QLabel("New Scan")
-        title.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
-        title.setStyleSheet("color: #00ff88;")
-        root.addWidget(title)
+        # ── Page header bar ────────────────────────────────────────────────
+        header_bar = QWidget()
+        header_bar.setStyleSheet("background-color: #080e1c; border-bottom: 1px solid #1a2e45;")
+        header_bar.setFixedHeight(70)
+        hb_lay = QHBoxLayout(header_bar)
+        hb_lay.setContentsMargins(28, 14, 28, 14)
 
-        splitter = QSplitter(Qt.Orientation.Vertical)
-        root.addWidget(splitter, stretch=1)
+        title_col = QVBoxLayout()
+        title_col.setSpacing(2)
+        t = QLabel("New Scan")
+        t.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
+        t.setStyleSheet("color: #cbd5e1; background: transparent;")
+        title_col.addWidget(t)
+        s = QLabel("Configure target and pipeline options, then launch")
+        s.setStyleSheet("color: #3d5470; font-size: 12px; background: transparent;")
+        title_col.addWidget(s)
+        hb_lay.addLayout(title_col)
+        hb_lay.addStretch()
 
-        # ── Top: config + progress ────────────────────────────────────────
-        top_w = QWidget()
-        top_lay = QVBoxLayout(top_w)
-        top_lay.setContentsMargins(0, 0, 0, 0)
-        top_lay.setSpacing(12)
+        self._status_lbl = QLabel("Ready to scan")
+        self._status_lbl.setStyleSheet(
+            "color: #3d5470; font-size: 13px; background: transparent;")
+        hb_lay.addWidget(self._status_lbl)
+        outer.addWidget(header_bar)
 
-        # Config group
-        cfg_box = QGroupBox("Target Configuration")
-        cfg_grid = QGridLayout(cfg_box)
-        cfg_grid.setSpacing(8)
+        # ── Main body: left config | right pipeline ────────────────────────
+        body = QWidget()
+        body_lay = QHBoxLayout(body)
+        body_lay.setContentsMargins(0, 0, 0, 0)
+        body_lay.setSpacing(0)
+        outer.addWidget(body, stretch=1)
 
-        cfg_grid.addWidget(QLabel("Target:"), 0, 0)
+        # ── LEFT PANEL: scrollable config ─────────────────────────────────
+        left_scroll = QScrollArea()
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        left_scroll.setMinimumWidth(480)
+        left_scroll.setMaximumWidth(620)
+
+        left_w = QWidget()
+        left_lay = QVBoxLayout(left_w)
+        left_lay.setContentsMargins(24, 24, 24, 24)
+        left_lay.setSpacing(18)
+
+        # Target
+        target_box = QGroupBox("TARGET")
+        tb_lay = QVBoxLayout(target_box)
+        tb_lay.setSpacing(8)
+
         self._target_inp = QLineEdit()
-        self._target_inp.setPlaceholderText("IP, domain, CIDR, or URL…")
-        cfg_grid.addWidget(self._target_inp, 0, 1, 1, 3)
+        self._target_inp.setPlaceholderText(
+            "IP address, hostname, CIDR (10.0.0.0/24), or URL…")
+        self._target_inp.setMinimumHeight(42)
+        tb_lay.addWidget(self._target_inp)
 
-        browse = QPushButton("From File")
-        browse.setFixedWidth(90)
+        file_row = QHBoxLayout()
+        browse = QPushButton("Load from File…")
         browse.clicked.connect(self._browse_targets)
-        cfg_grid.addWidget(browse, 0, 4)
+        file_row.addWidget(browse)
+        file_row.addStretch()
+        tb_lay.addLayout(file_row)
+        left_lay.addWidget(target_box)
 
-        cfg_grid.addWidget(QLabel("Profile:"), 1, 0)
+        # Scan options
+        opts_box = QGroupBox("SCAN OPTIONS")
+        og = QGridLayout(opts_box)
+        og.setSpacing(12)
+        og.setHorizontalSpacing(20)
+
+        og.addWidget(_lbl("Profile"), 0, 0)
         self._profile = QComboBox()
         self._profile.addItems(["standard", "quick", "full", "stealth"])
-        cfg_grid.addWidget(self._profile, 1, 1)
+        og.addWidget(self._profile, 0, 1)
 
-        cfg_grid.addWidget(QLabel("Ports:"), 1, 2)
+        og.addWidget(_lbl("Port Range"), 1, 0)
         self._ports = QLineEdit()
-        self._ports.setPlaceholderText("80,443,8080 or 1-1024")
-        cfg_grid.addWidget(self._ports, 1, 3, 1, 2)
+        self._ports.setPlaceholderText("e.g. 80,443,8080  or  1-65535")
+        og.addWidget(self._ports, 1, 1)
 
-        cfg_grid.addWidget(QLabel("Proxy:"), 2, 0)
+        og.addWidget(_lbl("HTTP Proxy"), 2, 0)
         self._proxy = QLineEdit()
         self._proxy.setPlaceholderText("http://127.0.0.1:8080")
-        cfg_grid.addWidget(self._proxy, 2, 1, 1, 2)
+        og.addWidget(self._proxy, 2, 1)
 
-        cfg_grid.addWidget(QLabel("Cookie:"), 2, 3)
+        og.addWidget(_lbl("Auth Cookie"), 3, 0)
         self._cookie = QLineEdit()
-        self._cookie.setPlaceholderText("session=abc123")
-        cfg_grid.addWidget(self._cookie, 2, 4)
+        self._cookie.setPlaceholderText("session=abc123…")
+        og.addWidget(self._cookie, 3, 1)
 
-        cfg_grid.addWidget(QLabel("Slack:"), 3, 0)
+        og.addWidget(_lbl("Slack Webhook"), 4, 0)
         self._slack = QLineEdit()
-        self._slack.setPlaceholderText("https://hooks.slack.com/…")
-        cfg_grid.addWidget(self._slack, 3, 1, 1, 4)
+        self._slack.setPlaceholderText("https://hooks.slack.com/services/…")
+        og.addWidget(self._slack, 4, 1)
 
-        # Checkboxes
-        chk_row = QHBoxLayout()
-        self._chk_passive = QCheckBox("Skip Passive Recon")
-        self._chk_web     = QCheckBox("Skip Web Enumeration")
-        self._chk_cve     = QCheckBox("Skip CVE Lookup")
+        left_lay.addWidget(opts_box)
+
+        # Skip options
+        skip_box = QGroupBox("SKIP OPTIONS")
+        sk_lay = QVBoxLayout(skip_box)
+        sk_lay.setSpacing(10)
+        self._chk_passive = _chk("Skip Passive Reconnaissance")
+        self._chk_web     = _chk("Skip Web Enumeration")
+        self._chk_cve     = _chk("Skip CVE Lookup")
         for c in (self._chk_passive, self._chk_web, self._chk_cve):
-            chk_row.addWidget(c)
-        chk_row.addStretch()
-        cfg_grid.addLayout(chk_row, 4, 0, 1, 5)
+            sk_lay.addWidget(c)
+        left_lay.addWidget(skip_box)
 
-        top_lay.addWidget(cfg_box)
-
-        # Scan action buttons
+        # Action buttons
         btn_row = QHBoxLayout()
         btn_row.setSpacing(10)
-        self._start_btn = QPushButton("▶  Start Scan")
+        self._start_btn = QPushButton("▶   Start Scan")
         self._start_btn.setObjectName("StartButton")
+        self._start_btn.setMinimumHeight(44)
         self._start_btn.clicked.connect(self._start_scan)
         btn_row.addWidget(self._start_btn)
 
-        self._stop_btn = QPushButton("■  Stop")
+        self._stop_btn = QPushButton("■   Stop")
         self._stop_btn.setObjectName("StopButton")
         self._stop_btn.setEnabled(False)
+        self._stop_btn.setMinimumHeight(44)
         self._stop_btn.clicked.connect(self._stop_scan)
         btn_row.addWidget(self._stop_btn)
-        btn_row.addStretch()
+        left_lay.addLayout(btn_row)
 
-        self._status_lbl = QLabel("Ready")
-        self._status_lbl.setStyleSheet("color: #808090; font-size: 12px;")
-        btn_row.addWidget(self._status_lbl)
-        top_lay.addLayout(btn_row)
+        left_lay.addStretch()
+        left_scroll.setWidget(left_w)
+        body_lay.addWidget(left_scroll)
 
-        # Stage progress bars
-        prog_box = QGroupBox("Pipeline Progress")
-        prog_lay = QVBoxLayout(prog_box)
-        prog_lay.setSpacing(4)
+        # Vertical divider
+        vdiv = QFrame()
+        vdiv.setFrameShape(QFrame.Shape.VLine)
+        vdiv.setStyleSheet("background-color: #1a2e45; max-width: 1px; border: none;")
+        body_lay.addWidget(vdiv)
+
+        # ── RIGHT PANEL: pipeline + log ────────────────────────────────────
+        right_w = QWidget()
+        right_lay = QVBoxLayout(right_w)
+        right_lay.setContentsMargins(24, 24, 24, 24)
+        right_lay.setSpacing(18)
+
+        # Pipeline stages
+        pipe_label = QLabel("PIPELINE STAGES")
+        pipe_label.setObjectName("SectionLabel")
+        right_lay.addWidget(pipe_label)
+
+        stages_widget = QWidget()
+        stages_widget.setObjectName("Card")
+        stages_widget.setStyleSheet(
+            "#Card { background-color: #0f1929; border: 1px solid #1a2e45;"
+            " border-radius: 10px; }")
+        stages_lay = QVBoxLayout(stages_widget)
+        stages_lay.setContentsMargins(12, 12, 12, 12)
+        stages_lay.setSpacing(2)
 
         self._stage_rows: list[_StageRow] = []
-        for name in STAGE_NAMES:
-            row = _StageRow(name)
-            prog_lay.addWidget(row)
+        for idx, name in enumerate(STAGE_NAMES):
+            row = _StageRow(name, idx)
+            stages_lay.addWidget(row)
             self._stage_rows.append(row)
 
-        # Overall progress
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet("color: #1a1a2e;")
-        prog_lay.addWidget(sep)
+            if idx < len(STAGE_NAMES) - 1:
+                sep = QFrame()
+                sep.setFrameShape(QFrame.Shape.HLine)
+                sep.setStyleSheet(
+                    "background-color: #142035; max-height: 1px; border: none;")
+                stages_lay.addWidget(sep)
 
-        overall_row = QHBoxLayout()
-        overall_row.addWidget(QLabel("Overall:"))
+        right_lay.addWidget(stages_widget)
+
+        # Overall progress
+        ovr_row = QHBoxLayout()
+        ovr_row.setSpacing(12)
+        ovr_lbl = QLabel("Overall Progress")
+        ovr_lbl.setStyleSheet("color: #3d5470; font-size: 12px;")
+        ovr_row.addWidget(ovr_lbl)
         self._overall_bar = QProgressBar()
         self._overall_bar.setRange(0, len(STAGE_NAMES))
         self._overall_bar.setValue(0)
-        self._overall_bar.setFixedHeight(12)
-        overall_row.addWidget(self._overall_bar)
-        prog_lay.addLayout(overall_row)
-        top_lay.addWidget(prog_box)
+        self._overall_bar.setFixedHeight(8)
+        ovr_row.addWidget(self._overall_bar)
+        right_lay.addLayout(ovr_row)
 
-        splitter.addWidget(top_w)
-
-        # ── Bottom: log console ───────────────────────────────────────────
-        log_w = QWidget()
-        log_lay = QVBoxLayout(log_w)
-        log_lay.setContentsMargins(0, 0, 0, 0)
-
-        log_title = QLabel("Live Output")
-        log_title.setObjectName("SectionLabel")
-        log_lay.addWidget(log_title)
+        # Live output
+        log_label = QLabel("LIVE OUTPUT")
+        log_label.setObjectName("SectionLabel")
+        right_lay.addWidget(log_label)
 
         self._log = LogConsole()
-        log_lay.addWidget(self._log)
-        splitter.addWidget(log_w)
+        right_lay.addWidget(self._log, stretch=1)
 
-        splitter.setSizes([420, 300])
+        body_lay.addWidget(right_w, stretch=1)
 
+    # ── Helpers ───────────────────────────────────────────────────────────
     def _browse_targets(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Select targets file",
-                                               "", "Text files (*.txt);;All (*)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select targets file", "", "Text files (*.txt);;All (*)")
         if path:
             self._target_inp.setText(f"@{path}")
 
@@ -234,14 +329,14 @@ class ScanTab(QWidget):
         self._overall_bar.setValue(0)
 
     def start_scan_for_target(self, target: str):
-        """Called externally (e.g. from Dashboard quick scan)."""
         self._target_inp.setText(target)
         self._start_scan()
 
     def _start_scan(self):
         target = self._target_inp.text().strip()
         if not target:
-            self._status_lbl.setText("Enter a target first.")
+            self._status_lbl.setText("⚠  Enter a target first.")
+            self._status_lbl.setStyleSheet("color: #ff7b2d; font-size: 13px; background: transparent;")
             return
         if self._worker and self._worker.isRunning():
             return
@@ -251,7 +346,7 @@ class ScanTab(QWidget):
         self._start_btn.setEnabled(False)
         self._stop_btn.setEnabled(True)
         self._status_lbl.setText("Scanning…")
-        self._status_lbl.setStyleSheet("color: #ffcc00;")
+        self._status_lbl.setStyleSheet("color: #f59e0b; font-size: 13px; background: transparent;")
 
         scan_args = {
             "output":       self._output_dir,
@@ -279,8 +374,8 @@ class ScanTab(QWidget):
         if self._worker:
             self._worker.stop()
             self._worker.terminate()
-        self._status_lbl.setText("Stopped.")
-        self._status_lbl.setStyleSheet("color: #ff4444;")
+        self._status_lbl.setText("Stopped")
+        self._status_lbl.setStyleSheet("color: #ff4757; font-size: 13px; background: transparent;")
         self._start_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
 
@@ -296,7 +391,7 @@ class ScanTab(QWidget):
                 row.set_done(elapsed)
                 break
 
-    def _on_stage_failed(self, name: str, err: str):
+    def _on_stage_failed(self, name: str, _err: str = ""):
         for row, sname in zip(self._stage_rows, STAGE_NAMES):
             if sname == name:
                 row.set_failed()
@@ -305,13 +400,12 @@ class ScanTab(QWidget):
     def _on_log(self, msg: str, level: str):
         self._log.append(msg, level)
 
-    def _on_progress(self, idx: int, total: int):
+    def _on_progress(self, idx: int, _total: int):
         self._overall_bar.setValue(idx)
 
     def _on_scan_complete(self, data: dict):
-        self._status_lbl.setText("Scan complete ✔")
-        self._status_lbl.setStyleSheet("color: #00ff88;")
-        # Mark all remaining stages done
+        self._status_lbl.setText("Scan complete  ✔")
+        self._status_lbl.setStyleSheet("color: #00ff88; font-size: 13px; background: transparent;")
         for row in self._stage_rows:
             if row._bar.value() < 100:
                 row.set_done()
@@ -321,3 +415,15 @@ class ScanTab(QWidget):
     def _on_worker_finished(self):
         self._start_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
+
+
+def _lbl(text: str) -> QLabel:
+    l = QLabel(text)
+    l.setStyleSheet("color: #4b5e7a; font-size: 13px; font-weight: 600;")
+    return l
+
+
+def _chk(text: str) -> QCheckBox:
+    c = QCheckBox(text)
+    c.setStyleSheet("color: #8fadc8; font-size: 13px; spacing: 10px;")
+    return c
